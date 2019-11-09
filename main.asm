@@ -46,16 +46,30 @@ main:
 	jal	draw_x_axis
 	
 	li	$s0, 0
-	li	$s1, 200
-	li	$s2, 0
+	li	$s1, 800
+	li	$s2, 0			# current angle
 	lw	$s3, RAD_PER_PIXEL
+	li	$s4, 1			# is ascending?
 loop:
 	beq	$s0, $s1, end
 	
+	li	$t0, -1686629713		# - scale * pi / 2
+	blt	$s2, $t0, start_ascending
+	li	$t0, 1686629713			#  scale * pi / 2
+	bgt	$s2, $t0, start_descending
+	j	continue
+start_ascending:
+	li	$s4, 1
+	li	$s2, -1686629713
+	j	continue
+start_descending:
+	li	$s4, 0
+	li	$s2, 1686629713
+continue:
 	move	$a0, $s2
 	jal	cordic
 	
-	div	$a2, $a0, 5368709
+	div	$a2, $a0, 5368709	# cordic / (scale / 200)
 	addi	$a2, $a2, 200
 
 	li	$a0, 0x00000000	
@@ -63,6 +77,11 @@ loop:
 	jal	set_pixel
 	
 	addi	$s0, $s0, 1
+	
+	bgtz	$s4, ascending
+	sub	$s2, $s2, $s3
+	j	loop
+ascending:
 	add	$s2, $s2, $s3
 	j	loop
 end:
