@@ -16,15 +16,34 @@ HEADER:		.byte 'B', 'M'			# signature
 		.word 0				# vertical resolution
 		.word 0				# colors used
 		.word 0				# important colors
-DATA:		.space 1280000
-K_INV:		.word 652032874
-SCALE:		.word 1073741824
-ITER:		.byte 32
+DATA:		.space 1280000			# pixel data
+
+SCALE_X:	.word 200			# sine period
+SCALE_Y:	.word 200			# sine amplitude
+
+PHASE:		.word 0				# sine phase (radians scaled)
+ASCENDING:	.word 1				# is ascending (boolean)
+
+LIMIT_X:	.word 800			# maximum x-coord (pixels)
+SHIFT_X:	.word 0				# starting x-coord (pixels)
+SHIFT_Y:	.word 200			# starting y-coord (pixels)
+
+SCALE:		.word 1073741824		# precision scale
+K_INV:		.word 652032874			# scale * lim n->inf K(n)
+PI_2:		.word 1686629713		# scale * pi / 2
+PI_2_NEG:	.word -1686629713		# - scale * pi / 2
+ITER:		.byte 32			# number of bits, number of angles
+
+# scale * arctan(2^-i)
 ANGLES:		.word 843314856, 497837829, 263043836, 133525158, 67021686, 33543515, 16775850, 8388437, 4194282, 2097149, 1048575, 524287, 262143, 131071, 65535, 32767, 16383, 8191, 4095, 2047, 1023, 511, 255, 127, 63, 31, 15, 8, 4, 2, 1, 0
-RAD_PER_PIXEL:	.word 8433148
+
+SCALE_PER_X:	.word 0 # auto-set
+SCALE_PER_Y:	.word 0 # auto-set
 	.text
 	.globl main
 main:
+	jal	setup_vars
+	
 	li	$v0, 13			# open file
 	la	$a0, FILE_NAME
 	li	$a1, 1
@@ -45,40 +64,44 @@ main:
 	li	$a0, 0x00000000
 	jal	draw_x_axis
 	
-	li	$s0, 0
-	li	$s1, 800
-	li	$s2, 0			# current angle
-	lw	$s3, RAD_PER_PIXEL
-	li	$s4, 1			# is ascending?
+	lw	$s0, SHIFT_X		# $s0 = current x-cord
+	lw	$s1, LIMIT_X
+	lw	$s2, PHASE		# $s2 = theta
+	lw	$s3, SCALE_PER_X
+	lw	$s4, ASCENDING		# $s4 = is sine ascending (boolean)
 loop:
 	beq	$s0, $s1, end
 	
-	li	$t0, -1686629713		# - scale * pi / 2
+	lw	$t0, PI_2_NEG		# check and switch ascending mode
 	blt	$s2, $t0, start_ascending
-	li	$t0, 1686629713			#  scale * pi / 2
+	lw	$t0, PI_2
 	bgt	$s2, $t0, start_descending
 	j	continue
 start_ascending:
 	li	$s4, 1
-	li	$s2, -1686629713
+	lw	$s2, PI_2_NEG
+	add	$s2, $s2, $s3
 	j	continue
 start_descending:
 	li	$s4, 0
-	li	$s2, 1686629713
+	lw	$s2, PI_2
+	sub	$s2, $s2, $s3
 continue:
 	move	$a0, $s2
-	jal	cordic
+	jal	cordic			# calculate sin(theta)
 	
-	div	$a2, $a0, 5368709	# cordic / (scale / 200)
-	addi	$a2, $a2, 200
+	lw	$t0, SCALE_PER_Y
+	div	$a2, $a0, $t0
+	lw	$t0, SHIFT_Y
+	add	$a2, $a2, $t0		# scale and shift
 
 	li	$a0, 0x00000000	
 	move	$a1, $s0
-	jal	set_pixel
+	jal	set_pixel		# draw the result
 	
-	addi	$s0, $s0, 1
+	addi	$s0, $s0, 1		# increment x-coord
 	
-	bgtz	$s4, ascending
+	bgtz	$s4, ascending		# increment or decrement theta
 	sub	$s2, $s2, $s3
 	j	loop
 ascending:
@@ -98,6 +121,22 @@ end:
 	
 	li	$v0, 10			# exit
 	syscall
+
+##################################################################################################
+# PROCEDURE: setup_vars
+##################################################################################################
+setup_vars:
+	lw	$t0, PI_2
+	lw	$t1, SCALE_X
+	div	$t0, $t0, $t1
+	sw	$t0, SCALE_PER_X
+	
+	lw	$t0, SCALE
+	lw	$t1, SCALE_Y
+	div	$t0, $t0, $t1
+	sw	$t0, SCALE_PER_Y
+	
+	jr	$ra
 
 ##################################################################################################
 # PROCEDURE: set_background
